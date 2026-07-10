@@ -1,54 +1,28 @@
-"""Demo: generate a fake dataset and produce a balance-test LaTeX table.
+"""Demo: produce a balance-test LaTeX table from a synthetic dataset.
 
-Builds a synthetic firm-level dataset with continuous, binary and categorical
-variables, splits firms into two groups (AI adopters vs non adopters) via a
-binary ``hire_manager_year`` column, and renders the balance table to LaTeX
-using ``descriptive_tables``.
+Takes the synthetic firm-level dataset from ``demonstration_data``, which splits
+firms into two groups (AI adopters vs non adopters) via a binary
+``hire_manager_year`` column, and renders the balance table to LaTeX using
+``descriptive_tables``.
 
 Run it from anywhere; the .tex files land in a ``tables/`` directory next to
-this script.
+this script. Pasted line by line into a REPL, they land under the current
+working directory instead, since there is no script to sit next to.
 """
 
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
-
+from demonstration_data import df_test_data
 from descriptive_tables import balance_table, to_latex, descriptive_table, classify_variables
 
-OUT_DIR = Path(__name__).resolve().parent / "tables"
+try:
+    # Running as a script: put the output next to this file, whatever the cwd.
+    SCRIPT_DIR = Path(__file__).resolve().parent
+except NameError:
+    # No __file__ in a REPL / notebook / `python -c`: fall back to the cwd.
+    SCRIPT_DIR = Path.cwd()
 
-# ── Reproducible fake dataset ────────────────────────────────────────────────
-rng = np.random.default_rng(42)
-n = 1_000
-
-# Group indicator: 1 = AI adopter, 0 = non adopter (also the OLS treatment).
-hire_manager = rng.binomial(1, 0.45, n)
-
-df = pd.DataFrame({
-    "hire_manager_year": hire_manager,
-
-    # Continuous variables (adopters slightly larger / more productive).
-    "log_operating_revenue": rng.normal(8.0 + 0.4 * hire_manager, 1.1, n),
-    "log_added_value": rng.normal(6.5 + 0.3 * hire_manager, 1.0, n),
-    "log_revenue_per_employee": rng.normal(4.2 + 0.15 * hire_manager, 0.6, n),
-
-    # Binary variables (adopters more likely to hold fundraising).
-    "has_fundraising": rng.binomial(1, 0.25 + 0.15 * hire_manager, n),
-    "has_new_fundraising": rng.binomial(1, 0.10 + 0.08 * hire_manager, n),
-
-    # Categorical variables.
-    "sector": rng.choice(
-        ["Manufacturing", "Services & retail", "Finance", "ICT"],
-        size=n,
-        p=[0.30, 0.35, 0.15, 0.20],
-    ),
-    "age_cat": rng.choice(
-        ["Young (<5y)", "Mature (5-20y)", "Old (>20y)"],
-        size=n,
-        p=[0.25, 0.50, 0.25],
-    ),
-})
+OUT_DIR = SCRIPT_DIR / "tables"
 
 # ── Variable lists by type (inferred from the number of distinct values) ─────
 var_list = [
@@ -62,7 +36,7 @@ var_list = [
 ]
 
 binary_vars, categorical_vars, continuous_vars = classify_variables(
-    df,
+    df_test_data,
     var_list,
     categorical_threshold=20,
 )
@@ -70,7 +44,7 @@ binary_vars, categorical_vars, continuous_vars = classify_variables(
 
 # ── Balance table ────────────────────────────────────────────────────────────
 df_summary = balance_table(
-    df,
+    df_test_data,
     binary_vars=binary_vars,
     categorical_vars=categorical_vars,
     continuous_vars=continuous_vars,
@@ -93,7 +67,7 @@ print(f"\nLaTeX table written to {out_path}")
 
 # ── Descriptive table over ALL firms ─────────────────────────────────────────
 df_summary = descriptive_table(
-    df,
+    df_test_data,
     binary_vars=binary_vars,
     categorical_vars=categorical_vars,
     continuous_vars=continuous_vars,

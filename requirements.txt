@@ -1,0 +1,5 @@
+numpy
+pandas
+statsmodels
+# pandas >= 3 renders DataFrame.to_latex through its Styler, which needs jinja2.
+jinja2

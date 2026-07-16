@@ -1,9 +1,15 @@
 """Reusable functions to build descriptive and balance-test tables and render them to LaTeX.
 """
 
+import re
+
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+
+# A category label is treated as a year (and kept in ascending label order rather
+# than sorted by value) when it is exactly four digits, e.g. "2019".
+_YEAR_RE = re.compile(r"^\d{4}$")
 
 # Same mapping as in codes/balanched_check.py
 LATEX_SPECIAL_CHARS_REPLACEMENT = {
@@ -119,6 +125,28 @@ def _binary_block(data, var_list, mean_col, std_col, count_col):
     return block[[mean_col, std_col, count_col]]
 
 
+def _all_years(categories):
+    """True when every category label looks like a 4-digit year, e.g. "2019"."""
+    categories = list(categories)
+    return bool(categories) and all(_YEAR_RE.match(str(c)) for c in categories)
+
+
+def _order_categories(shares):
+    """Row order for a categorical variable's categories.
+
+    ``shares`` is a Series indexed by category (e.g. ``value_counts(normalize=
+    True)`` on the reference sample). Categories are ordered by descending share
+    so the most frequent category comes first -- except when every label is a
+    4-digit year, in which case they are kept in ascending year order so the
+    reader sees a natural time axis rather than a frequency ranking.
+    """
+    categories = list(shares.index)
+    if _all_years(categories):
+        return sorted(categories, key=lambda c: str(c))
+    # Stable sort on the negated share keeps ties in their incoming order.
+    return list(shares.sort_values(ascending=False, kind="stable").index)
+
+
 def _categorical_block(data, var, mean_col, std_col, count_col, categories=None):
     """Header row (count only) followed by one share row per category.
 
@@ -136,7 +164,9 @@ def _categorical_block(data, var, mean_col, std_col, count_col, categories=None)
     """
     shares = data[var].value_counts(normalize=True)
     if categories is None:
-        categories = list(shares.index)
+        # No externally fixed order: sort this sample's own categories by
+        # descending share (years stay in ascending label order).
+        categories = _order_categories(shares)
     else:
         shares = shares.reindex(categories, fill_value=0.0)
 
@@ -320,12 +350,19 @@ def balance_table(
     df1 = df[df[group_var] == 1]
     df0 = df[df[group_var] == 0]
 
-    # Fix the category order on the pooled sample so both group tables share the
-    # same rows. A category seen only in one group therefore gets a 0 share in
-    # the other (it is genuinely absent), not a missing value.
-    categories = {
-        var: list(df[var].value_counts().index) for var in categorical_vars
-    }
+    # Fix the category order so both group tables share the same rows, ordering
+    # by the Group 1 (value == 1) share from biggest to smallest -- except for
+    # year-labelled categories, kept in ascending year order. Categories absent
+    # from Group 1 (0 share there) still appear, ranked last; they get a genuine
+    # 0 share in each group table too, not a missing value.
+    categories = {}
+    for var in categorical_vars:
+        shares1 = df1[var].value_counts(normalize=True)
+        # Include categories present anywhere in the pooled sample, even if
+        # unseen in Group 1, so no pooled category is silently dropped.
+        all_cats = df[var].value_counts().index
+        shares1 = shares1.reindex(all_cats, fill_value=0.0)
+        categories[var] = _order_categories(shares1)
 
     cols = ("Mean", "Std", "N")
 
